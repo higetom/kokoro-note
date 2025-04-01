@@ -3,13 +3,13 @@ from openai import OpenAI
 from datetime import datetime
 import os
 
-# --- ☀️ ページ設定 ---
+# --- ページ設定 ---
 st.set_page_config(page_title="こころノート - AI相方切り替え", layout="centered")
 
-# --- 🔐 OpenAI APIキーの設定（環境変数から取得） ---
+# --- OpenAI API キーの取得 ---
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# --- 🧑‍💻 ログイン欄 ---
+# --- ログイン欄 ---
 st.sidebar.title("🔐 ログイン")
 username = st.sidebar.text_input("ユーザー名を入力してください")
 password = st.sidebar.text_input("パスワード（任意）", type="password")
@@ -18,26 +18,25 @@ if not username:
     st.warning("まずはサイドバーにユーザー名を入力してください。")
     st.stop()
 
-# --- セッション状態の初期化 ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
 # --- キャラクター選択 ---
 st.title("今日は誰に話す？")
-st.markdown("""
-#### あなたの気分に合わせて、今話したい“こころの相方”を選んでください。
-""")
-character = st.selectbox("キャラクター選択", ("やさしいこころAI", "オネエ先生", "神様"))
-st.session_state.character = character
+st.markdown("#### あなたの気分に合わせて、今話したい“こころの相方”を選んでください。")
 
-# --- 導入メッセージ ---
-intro = {
-    "やさしいこころAI": "_ここは、あなたの気持ちにそっと寄り添う場所です。\nうまく言葉にできなくても、ただ感じたことをそのまま書いてみてくださいね。\nどんなあなたの言葉も、否定されることはありません。_",
-    "オネエ先生": "_さあさあ、遠慮せずに言ってごらんなさい！\n涙も怒りもグチもOK、アタシが全部受け止めてハグしてあげるわよ♡_",
-    "神様": "_悩み、嘆き、迷い…なんでも申してみよ。\nわしが全てを静かに聞こう。まずは心の中をそのまま言葉にしてみるがよいぞ。_",
+character = st.selectbox("キャラクター選択", ("やさしいこころAI", "オネエ先生", "神様"))
+
+# --- キャラ別導入メッセージ ---
+intro_messages = {
+    "やさしいこころAI": "_ここは、あなたの気持ちにそっと寄り添う場所です。_\nうまく言葉にできなくても、ただ感じたことをそのまま書いてみてくださいね。\nどんなあなたの言葉も、否定されることはありません。",
+    "オネエ先生": "_さあさあ、遠慮せずに言ってごらんなさい！_\n涙も怒りもグチもOK、アタシが全部受け止めてハグしてあげるわよ♡",
+    "神様": "_悩み、嘆き、迷い…なんでも申してみよ。_\nわしが全てを静かに聞こう。まずは心の中をそのまま言葉にしてみるがよいぞ。"
 }
-st.markdown(intro[character])
+
+st.markdown(intro_messages[character])
 st.markdown("---")
+
+# --- 会話履歴を保持するセッション状態 ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 # --- キャラごとのプロンプト ---
 def get_system_prompt(character):
@@ -64,52 +63,50 @@ def get_system_prompt(character):
     else:
         return "あなたは優しいAIです。"
 
-# --- 会話履歴保存関数 ---
-def save_conversation(username, character, user_input, reply):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    filename = f"{username}_chat_log.txt"
-    with open(filename, "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}]\n【{character}】\nユーザー: {user_input}\nAI: {reply}\n---\n")
+# --- 待機メッセージ ---
+def get_waiting_message(character):
+    if character == "やさしいこころAI":
+        return "少しだけお待ちくださいね…"
+    elif character == "オネエ先生":
+        return "返事を考えてるわよ、ちょっと待ってなさい♡"
+    elif character == "神様":
+        return "……ふむ、今そなたの声を聞いておる……"
+    else:
+        return "考え中です…"
 
 # --- 会話履歴表示 ---
-for message in st.session_state.messages:
-    role = message["role"]
-    content = message["content"]
+for i, (role, msg) in enumerate(st.session_state.chat_history):
     if role == "user":
-        st.markdown(f"🧍‍♂️ **あなた**: {content}")
-    elif role == "assistant":
-        st.markdown(f"🤖 **{character}**: {content}")
+        st.markdown(f"<div style='text-align: left; color: #333;'>🧍‍♂️ あなた：{msg}</div>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<div style='background-color: #f0f0f0; padding: 1rem; border-radius: 0.5rem;'>🤖 <strong>{character}：</strong><br>{msg}</div>", unsafe_allow_html=True)
 
-# --- 入力欄（常に下） ---
-user_input = st.text_area("いまの気持ちを話してみよう", height=180, key="input")
+# --- 入力欄 ---
+user_input = st.text_area("いまの気持ちを話してみよう", value="", height=180)
+
+# --- 送信処理 ---
 if st.button("話しかける"):
     if user_input.strip():
-        if not os.getenv("OPENAI_API_KEY"):
-            st.error("OpenAI APIキーが設定されていません。環境変数 'OPENAI_API_KEY' を設定してください。")
-        else:
-            with st.spinner(
-                {
-                    "やさしいこころAI": "考えをまとめています、少しだけお待ちくださいね…",
-                    "オネエ先生": "返事を考えてるわよ、ちょっと待ってなさい♡",
-                    "神様": "……ふむ、今そなたの声を聞いておる……",
-                }[character]
-            ):
-                try:
-                    messages = [
-                        {"role": "system", "content": get_system_prompt(character)}
-                    ] + st.session_state.messages + [
-                        {"role": "user", "content": user_input}
-                    ]
-                    response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=messages,
-                        temperature=0.85
-                    )
-                    reply = response.choices[0].message.content
-                    st.session_state.messages.append({"role": "user", "content": user_input})
-                    st.session_state.messages.append({"role": "assistant", "content": reply})
-                    save_conversation(username, character, user_input, reply)
-                except Exception as e:
-                    st.error(f"エラーが発生しました: {e}")
+        st.session_state.chat_history.append(("user", user_input))
+
+        with st.spinner(get_waiting_message(character)):
+            try:
+                messages = [
+                    {"role": "system", "content": get_system_prompt(character)}
+                ]
+                for role, msg in st.session_state.chat_history:
+                    messages.append({"role": "user" if role == "user" else "assistant", "content": msg})
+
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=messages,
+                    temperature=0.85
+                )
+
+                reply = response.choices[0].message.content
+                st.session_state.chat_history.append(("ai", reply))
+
+            except Exception as e:
+                st.error(f"エラーが発生しました: {e}")
     else:
         st.warning("何か一言だけでも、話してみてね。")
