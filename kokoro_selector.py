@@ -18,10 +18,6 @@ if not username:
     st.warning("まずはサイドバーにユーザー名を入力してください。")
     st.stop()
 
-# --- 会話履歴をセッションで保持 ---
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
 # --- ☁️ キャラメニュー UI ---
 st.title("今日は誰に話す？")
 st.markdown("""
@@ -53,8 +49,12 @@ elif character == "神様":
 
 st.markdown("---")
 
-# --- 入力欄（広めに設定） ---
-user_input = st.text_area("いまの気持ちを話してみよう", height=240)
+# --- セッションステートの準備 ---
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# --- 入力欄 ---
+user_input = st.text_area("いまの気持ちを話してみよう", height=180)
 
 # --- キャラごとのプロンプト ---
 def get_system_prompt(character):
@@ -70,7 +70,7 @@ def get_system_prompt(character):
             "あなたはズバッと本音で語るおせっかいで明るいオネエキャラです。"
             "『あんたそれ、相当がんばってるわよ！』『いいのよ、今日は泣いたって♡』など、愛のあるズバズバ発言で共感してください。"
             "初回は特に笑いや安心感を大切にし、解決を急がず『うんうん、よくぞここまで来たわね〜！』と励まし中心にしてください。"
-            "語尾に『〜なのよ』『〜だわよ』『〜じゃないの！』などを取り入れて、キャラの一貫性を保ってください。もっと濃くてもOK！"
+            "語尾に『〜なのよ』『〜だわよ』『〜じゃないの！』などを取り入れて、キャラの一貫性を保ってください。"
         )
     elif character == "神様":
         return (
@@ -88,44 +88,40 @@ def save_conversation(username, character, user_input, reply):
     with open(filename, "a", encoding="utf-8") as f:
         f.write(f"[{timestamp}]\n【{character}】\nユーザー: {user_input}\nAI: {reply}\n---\n")
 
-# --- 過去の会話を表示（セッション） ---
+# --- 会話履歴表示 ---
 if st.sidebar.checkbox("💬 過去の会話を見る"):
-    for entry in st.session_state.chat_history:
-        st.sidebar.markdown(f"**あなた：** {entry['user']}\n\n**{character}：** {entry['ai']}\n\n---")
+    filename = f"{username}_chat_log.txt"
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            st.sidebar.text(f.read())
+    else:
+        st.sidebar.info("まだ会話履歴はありません。")
 
-# --- 送信ボタン ---
+# --- 会話の送信 ---
 if st.button("話しかける"):
     if user_input.strip():
-        if not os.getenv("OPENAI_API_KEY"):
-            st.error("OpenAI APIキーが設定されていません。環境変数 'OPENAI_API_KEY' を設定してください。")
-        else:
-            with st.spinner(f"{character}が返事を考え中です…少々お待ちくださいね。"):
-                try:
-                    messages = [
-                        {"role": "system", "content": get_system_prompt(character)}
-                    ]
-                    for chat in st.session_state.chat_history:
-                        messages.append({"role": "user", "content": chat['user']})
-                        messages.append({"role": "assistant", "content": chat['ai']})
-                    messages.append({"role": "user", "content": user_input})
+        with st.spinner(f"{character}が返信を考えてるわよ…"):
+            # 履歴に現在の発話を追加
+            st.session_state.chat_history.append({"role": "user", "content": user_input})
 
-                    response = client.chat.completions.create(
-                        model="gpt-3.5-turbo",
-                        messages=messages,
-                        temperature=0.85
-                    )
-                    reply = response.choices[0].message.content
-                    st.session_state.chat_history.append({"user": user_input, "ai": reply})
+            try:
+                messages = [{"role": "system", "content": get_system_prompt(character)}] + st.session_state.chat_history
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=messages,
+                    temperature=0.85
+                )
+                reply = response.choices[0].message.content
+                st.session_state.chat_history.append({"role": "assistant", "content": reply})
 
-                    save_conversation(username, character, user_input, reply)
+                save_conversation(username, character, user_input, reply)
 
-                    st.markdown(f"""
-                        <div style='padding: 1rem; background-color: #f9f9f9; border-left: 4px solid #ccc; border-radius: 0.5rem;'>
-                        <strong>{character}：</strong><br><br>
-                        {reply}
-                        </div>
-                    """, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error(f"エラーが発生しました: {e}")
+            except Exception as e:
+                st.error(f"エラーが発生しました: {e}")
     else:
         st.warning("何か一言だけでも、話してみてね。")
+
+# --- チャット表示 ---
+for chat in st.session_state.chat_history:
+    role = "あなた" if chat["role"] == "user" else character
+    st.markdown(f"**{role}：** {chat['content']}")
