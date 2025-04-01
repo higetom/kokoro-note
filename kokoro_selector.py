@@ -10,7 +10,7 @@ st.set_page_config(page_title="こころノート - AI相方切り替え", layou
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # --- 🧑‍💻 ログイン欄 ---
-st.sidebar.title("🔐 ログイン")
+st.sidebar.title("🔐 ロイグイン")
 username = st.sidebar.text_input("ユーザー名を入力してください")
 password = st.sidebar.text_input("パスワード（任意）", type="password")
 
@@ -18,45 +18,17 @@ if not username:
     st.warning("まずはサイドバーにユーザー名を入力してください。")
     st.stop()
 
-# --- ☁️ キャラメニュー UI ---
-st.title("今日は誰に話す？")
-st.markdown("""
-#### あなたの気分に合わせて、今話したい“こころの相方”を選んでください。
-""")
+# --- 会話履歴保存関数 ---
+def save_conversation(username, character, conversation):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    filename = f"{username}_chat_log.txt"
+    with open(filename, "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}]\n【{character}】\n")
+        for entry in conversation:
+            f.write(f"{entry['role']}: {entry['content']}\n")
+        f.write("---\n")
 
-character = st.selectbox(
-    "キャラクター選択",
-    ("やさしいこころAI", "オネエ先生", "神様")
-)
-
-# --- キャラごとの導入メッセージ ---
-if character == "やさしいこころAI":
-    st.markdown("""
-    _ここは、あなたの気持ちにそっと寄り添う場所です。_
-    うまく言葉にできなくても、ただ感じたことをそのまま書いてみてくださいね。
-    どんなあなたの言葉も、否定されることはありません。
-    """)
-elif character == "オネエ先生":
-    st.markdown("""
-    _さあさあ、遠慮せずに言ってごらんなさい！_
-    涙も怒りもグチもOK、アタシが全部受け止めてハグしてあげるわよ♡
-    """)
-elif character == "神様":
-    st.markdown("""
-    _悩み、嘆き、迷い…なんでも申してみよ。_
-    わしが全てを静かに聞こう。まずは心の中をそのまま言葉にしてみるがよいぞ。
-    """)
-
-st.markdown("---")
-
-# --- セッションステートの準備 ---
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-
-# --- 入力欄 ---
-user_input = st.text_area("いまの気持ちを話してみよう", height=180)
-
-# --- キャラごとのプロンプト ---
+# --- キャラのシステムプロンプト ---
 def get_system_prompt(character):
     if character == "やさしいこころAI":
         return (
@@ -81,47 +53,58 @@ def get_system_prompt(character):
     else:
         return "あなたは優しいAIです。"
 
-# --- 会話履歴保存関数 ---
-def save_conversation(username, character, user_input, reply):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    filename = f"{username}_chat_log.txt"
-    with open(filename, "a", encoding="utf-8") as f:
-        f.write(f"[{timestamp}]\n【{character}】\nユーザー: {user_input}\nAI: {reply}\n---\n")
+# --- 🤖 キャラ選択 ---
+st.title("こころノート")
+character = st.selectbox("キャラクター選択", ("やさしいこころAI", "オネエ先生", "神様"))
 
-# --- 会話履歴表示 ---
-if st.sidebar.checkbox("💬 過去の会話を見る"):
-    filename = f"{username}_chat_log.txt"
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            st.sidebar.text(f.read())
-    else:
-        st.sidebar.info("まだ会話履歴はありません。")
+# --- 導入メッセージ ---
+if character == "やさしいこころAI":
+    st.markdown("""
+    _ここは、あなたの気持ちにそっと寄り添う場所です。_
+    うまく言葉にできなくても、ただ感じたことをそのまま書いてみてくださいね。
+    どんなあなたの言葉も、否定されることはありません。
+    """)
+elif character == "オネエ先生":
+    st.markdown("""
+    _さあさあ、遠慮せずに言ってごらんなさい！_
+    涙も怒りもグチもOK、アタシが全部受け止めてハグしてあげるわよ♡
+    """)
+elif character == "神様":
+    st.markdown("""
+    _悩み、嘆き、迷い…なんでも申してみよ。_
+    わしが全てを静かに聞こう。まずは心の中をそのまま言葉にしてみるがよいぞ。
+    """)
 
-# --- 会話の送信 ---
+st.markdown("---")
+
+# --- チャット履歴と入力欄 ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+    st.session_state.messages.append({"role": "system", "content": get_system_prompt(character)})
+
+for msg in st.session_state.messages[1:]:
+    if msg["role"] == "user":
+        st.markdown(f"**あなた：** {msg['content']}")
+    elif msg["role"] == "assistant":
+        st.markdown(f"**{character}：** {msg['content']}")
+
+user_input = st.text_area("いまの気持ちを話してみよう", height=180, key="input")
+
 if st.button("話しかける"):
     if user_input.strip():
-        with st.spinner(f"{character}が返信を考えてるわよ…"):
-            # 履歴に現在の発話を追加
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
-
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        with st.spinner(f"{character} が返信を考えてるわよ…"):
             try:
-                messages = [{"role": "system", "content": get_system_prompt(character)}] + st.session_state.chat_history
                 response = client.chat.completions.create(
                     model="gpt-3.5-turbo",
-                    messages=messages,
+                    messages=st.session_state.messages,
                     temperature=0.85
                 )
                 reply = response.choices[0].message.content
-                st.session_state.chat_history.append({"role": "assistant", "content": reply})
-
-                save_conversation(username, character, user_input, reply)
-
+                st.session_state.messages.append({"role": "assistant", "content": reply})
+                save_conversation(username, character, st.session_state.messages[1:])
             except Exception as e:
                 st.error(f"エラーが発生しました: {e}")
+        st.experimental_rerun()
     else:
         st.warning("何か一言だけでも、話してみてね。")
-
-# --- チャット表示 ---
-for chat in st.session_state.chat_history:
-    role = "あなた" if chat["role"] == "user" else character
-    st.markdown(f"**{role}：** {chat['content']}")
