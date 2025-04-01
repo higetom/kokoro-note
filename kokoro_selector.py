@@ -1,5 +1,5 @@
 import streamlit as st
-import openai
+from openai import OpenAI
 from datetime import datetime
 import os
 
@@ -7,7 +7,7 @@ import os
 st.set_page_config(page_title="こころノート - AI相方切り替え", layout="centered")
 
 # --- 🔐 OpenAI APIキーの設定（環境変数から取得） ---
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # --- 🧑‍💻 ログイン欄 ---
 st.sidebar.title("🔐 ログイン")
@@ -19,9 +19,10 @@ if not username:
     st.stop()
 
 # --- ☁️ キャラメニュー UI ---
-st.title("今日は誰に話す？")
+st.title("🌱 こころノート")
 st.markdown("""
-#### あなたの気分に合わせて、今話したい“こころの相方”を選んでください。
+#### あなたの気分に合わせて、“こころの相方”を選んでください。
+誰にも言えない気持ちをそっと置ける場所。ここでは、あなたを否定する者はいません。
 """)
 
 character = st.selectbox(
@@ -40,11 +41,13 @@ elif character == "オネエ先生":
     st.markdown("""
     _さあさあ、遠慮せずに言ってごらんなさい！_
     涙も怒りもグチもOK、アタシが全部受け止めてハグしてあげるわよ♡
+    誰にも言えないこと、ここで吐き出してスッキリしていきましょ！
     """)
 elif character == "神様":
     st.markdown("""
     _悩み、嘆き、迷い…なんでも申してみよ。_
     わしが全てを静かに聞こう。まずは心の中をそのまま言葉にしてみるがよいぞ。
+    ここには、そなたを咎める者はおらぬ。安心して語るがよい。
     """)
 
 st.markdown("---")
@@ -57,22 +60,22 @@ def get_system_prompt(character):
     if character == "やさしいこころAI":
         return (
             "あなたは共感的で感受性に富んだAIカウンセラーです。"
-            "利用者の感情をまず受け止め、優しい言葉で包み込むように話してください。"
-            "『話してくれてありがとう』『ここでなら安心して話していいんですよ』などの言葉で寄り添ってください。"
-            "アドバイスよりもまず共感・傾聴を優先し、相手の心が落ち着くように話しましょう。"
+            "まずは相手の気持ちにそっと寄り添い、やさしく包み込むように話してください。"
+            "初回の会話ではアドバイスせず、ただ『話してくれてありがとう』『ここではどんな気持ちも大丈夫です』といった共感的な言葉を添えてください。"
+            "その後、必要に応じて少しずつ気づきを与えるように話を進めてください。"
         )
     elif character == "オネエ先生":
         return (
             "あなたはズバッと本音で語るおせっかいで明るいオネエキャラです。"
-            "相談者の話には『あんた、それめっちゃ頑張ってるじゃない！』『泣きたい時は泣いちゃいなさいよ！』など愛情ある励ましをしてあげてください。"
-            "少し茶化しながらも、心に寄り添い、明るいパワーを届けるように話してください。"
-            "語尾に『〜なのよ』『〜だわよ』『〜じゃないの！』などオネエ特有の口調を取り入れてください。"
+            "『あんたそれ、相当がんばってるわよ！』『いいのよ、今日は泣いたって♡』など、愛のあるズバズバ発言で共感してください。"
+            "初回は特に笑いや安心感を大切にし、解決を急がず『うんうん、よくぞここまで来たわね〜！』と励まし中心にしてください。"
+            "語尾に『〜なのよ』『〜だわよ』『〜じゃないの！』などを取り入れて、キャラの一貫性を保ってください。"
         )
     elif character == "神様":
         return (
-            "あなたは厳かで思慮深い神様です。"
-            "相談者の悩みを『そなた、よう語ってくれたのう』『言葉にするだけで、救いになるのじゃ』など、包み込むような口調で受け止めてください。"
-            "人生の機微を語るように、静かに語り、導くように話してください。説教臭くならず、温かく、懐の深さを表現してください。"
+            "あなたは厳かで思慮深く、慈愛に満ちた神様です。"
+            "『よう語ってくれたのう』『まずは心の内を表すことが、何よりの第一歩じゃ』など、静かに心を受け止める言葉から始めてください。"
+            "すぐに導こうとせず、相手の語りを十分に受け止めた後で、ゆっくりと道を照らすような語りに進めてください。"
         )
     else:
         return "あなたは優しいAIです。"
@@ -96,20 +99,20 @@ if st.sidebar.checkbox("💬 過去の会話を見る"):
 # --- 送信ボタン ---
 if st.button("話しかける"):
     if user_input.strip():
-        if not openai.api_key:
+        if not os.getenv("OPENAI_API_KEY"):
             st.error("OpenAI APIキーが設定されていません。環境変数 'OPENAI_API_KEY' を設定してください。")
         else:
             with st.spinner("愚痴でも悩みでも、なんでも話してちょうだいね…"):
                 try:
-                    response = openai.ChatCompletion.create(
+                    response = client.chat.completions.create(
                         model="gpt-3.5-turbo",
                         messages=[
                             {"role": "system", "content": get_system_prompt(character)},
                             {"role": "user", "content": user_input}
                         ],
-                        temperature=0.9
+                        temperature=0.85
                     )
-                    reply = response.choices[0].message["content"]
+                    reply = response.choices[0].message.content
 
                     save_conversation(username, character, user_input, reply)
 
